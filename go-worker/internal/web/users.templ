@@ -1,0 +1,113 @@
+package web
+
+import (
+	"fmt"
+	"roleping-worker/internal/db"
+)
+
+// CredentialNotice carries a freshly generated password back to the owner.
+// It is shown once, on the response to the action that created it, and is
+// never stored anywhere in readable form.
+type CredentialNotice struct {
+	Email    string
+	Password string
+}
+
+templ UsersPage(users []db.User, ownerEmail string, userEmail string, isOwner bool, notice *CredentialNotice) {
+	@Layout("Users", userEmail, isOwner) {
+		<h2>Users</h2>
+		if notice != nil {
+			<div class="credential">
+				<p style="margin:0 0 4px;"><strong>Password set for { notice.Email }</strong></p>
+				<p style="margin:0 0 8px; font-size:13px;">Copy it now — it is not shown again and cannot be recovered. Send it to them over something private, not email if you can help it.</p>
+				<code>{ notice.Password }</code>
+			</div>
+		}
+
+		<table>
+			<thead>
+				<tr>
+					<th>Email</th>
+					<th>Role</th>
+					<th>Can sign in</th>
+					<th>Added</th>
+					<th></th>
+				</tr>
+			</thead>
+			<tbody>
+				for _, u := range users {
+					<tr>
+						<td>{ u.Email }</td>
+						<td>
+							if u.Email == ownerEmail {
+								owner
+							} else {
+								member
+							}
+						</td>
+						<td>
+							if u.HasPassword() {
+								<span class="match">yes</span>
+							} else {
+								<span class="pending">no password set</span>
+							}
+						</td>
+						<td>{ u.CreatedAt }</td>
+						<td>
+							<form method="post" action={ templ.URL(fmt.Sprintf("/users/%d/password", u.ID)) } style="display:inline;">
+								<button type="submit">Generate new password</button>
+							</form>
+							if u.Email != ownerEmail {
+								<form method="post" action={ templ.URL(fmt.Sprintf("/users/%d/delete", u.ID)) } style="display:inline;">
+									<button type="submit">Remove</button>
+								</form>
+							}
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+
+		<h3>Add a user</h3>
+		<p style="font-size:13px; color:#6b7280;">A password is generated for them automatically. They can change it themselves from the Account page after signing in.</p>
+		<form method="post" action="/users">
+			<label>
+				Email
+				<input type="email" name="email" required/>
+			</label>
+			<button type="submit">Add user</button>
+		</form>
+	}
+}
+
+templ AccountPage(userEmail string, isOwner bool, message string, errorMessage string) {
+	@Layout("Account", userEmail, isOwner) {
+		<h2>Account</h2>
+		<p>Signed in as <strong>{ userEmail }</strong>.</p>
+
+		if message != "" {
+			<div class="credential"><p style="margin:0;">{ message }</p></div>
+		}
+		if errorMessage != "" {
+			<div class="error-box"><p style="margin:0;">{ errorMessage }</p></div>
+		}
+
+		<h3>Change password</h3>
+		<form method="post" action="/account/password">
+			<label>
+				Current password
+				<input type="password" name="current_password" autocomplete="current-password" required/>
+			</label>
+			<label>
+				New password (at least 10 characters)
+				<input type="password" name="new_password" autocomplete="new-password" minlength="10" required/>
+			</label>
+			<button type="submit">Change password</button>
+		</form>
+
+		<h3>Sign out</h3>
+		<form method="post" action="/logout">
+			<button type="submit">Sign out</button>
+		</form>
+	}
+}

@@ -33,6 +33,18 @@ func RegisterRoutes(mux *httprouter.Router) {
 		http.Redirect(w, r, "/jobs", http.StatusFound)
 	})
 
+	mux.Handle("GET /login", loginPageHandler)
+	mux.Handle("POST /login", loginSubmitHandler)
+	mux.Handle("POST /logout", logoutHandler)
+
+	mux.Handle("GET /account", accountPageHandler)
+	mux.Handle("POST /account/password", changePasswordHandler)
+
+	mux.Handle("GET /users", usersPageHandler)
+	mux.Handle("POST /users", createUserHandler)
+	mux.Handle("POST /users/{id}/password", resetUserPasswordHandler)
+	mux.Handle("POST /users/{id}/delete", deleteUserHandler)
+
 	mux.Handle("GET /jobs", jobsPageHandler)
 	mux.Handle("GET /jobs/table", jobsTableHandler)
 	mux.Handle("GET /jobs/{id}", jobDetailPageHandler)
