@@ -1,0 +1,16 @@
+{
+  "name": "roleping-go-worker",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "generate": "templ generate",
+    "build": "powershell -ExecutionPolicy Bypass -File build.ps1",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply roleping-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply roleping-db --remote"
+  },
+  "devDependencies": {
+    "wrangler": "^4.114.0"
+  }
+}

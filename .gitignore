@@ -1,0 +1,6 @@
+node_modules/
+.wrangler/
+go-worker/build/
+go-worker/.dev.vars
+*.local
+.DS_Store
