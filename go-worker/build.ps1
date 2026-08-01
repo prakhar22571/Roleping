@@ -32,7 +32,14 @@ $env:WASMOPT = $wasmOpt
 
 Set-Location $PSScriptRoot
 
-& $templExe generate
+# -lazy: only rewrite a _templ.go file if its .templ source is newer.
+# Without this, `templ generate` rewrites every output file on every build
+# regardless of whether anything changed, which touches files under
+# internal/web/ that wrangler's watcher (build.watch_dir includes "internal")
+# treats as a source change - triggering another build, which regenerates
+# the same files again, forever. This is what an apparently-endless
+# "still building" session actually is.
+& $templExe generate -lazy
 if ($LASTEXITCODE -ne 0) { throw "templ generate failed" }
 
 go run github.com/syumai/workers/cmd/workers-assets-gen
