@@ -1,0 +1,82 @@
+package web
+
+import (
+	"fmt"
+	"roleping-worker/internal/db"
+)
+
+templ JobDetailPage(job db.JobListRow, verdicts []db.LlmVerdict, notification *db.Notification) {
+	@Layout(job.Title) {
+		<p><a href="/jobs">&larr; back to jobs</a></p>
+		<h2>{ job.Title }</h2>
+		<p><strong>Company:</strong> { job.CompanyName }</p>
+		<p>
+			<strong>Location:</strong>
+			if job.Location != nil {
+				{ *job.Location }
+			} else {
+				unknown
+			}
+		</p>
+		<p><a href={ templ.URL(job.ApplyURL) } target="_blank" rel="noreferrer">Apply link</a></p>
+
+		@StatusEditor(job.ID, job.ApplicationStatus)
+
+		<h3>Model verdicts</h3>
+		if len(verdicts) == 0 {
+			<p>No verdicts yet.</p>
+		}
+		for _, v := range verdicts {
+			<div style="border: 1px solid #e5e7eb; border-radius: 4px; padding: 8px; margin-bottom: 8px;">
+				<p style="margin: 0; font-weight: 600;">{ v.ModelID }</p>
+				<p style="margin: 4px 0;">
+					if v.Match {
+						MATCH
+					} else {
+						no match
+					}
+					if v.Confidence != nil {
+						{ fmt.Sprintf(" (confidence %.2f)", *v.Confidence) }
+					}
+				</p>
+				<p style="margin: 0; font-size: 13px; color: #4b5563;">{ v.Reasoning }</p>
+			</div>
+		}
+
+		if notification != nil {
+			<p>
+				<strong>Notification:</strong> { string(notification.EmailStatus) }
+				if notification.ErrorDetail != nil {
+					{ " — " + *notification.ErrorDetail }
+				}
+			</p>
+		}
+
+		<h3>Qualifications</h3>
+		<p style="white-space: pre-wrap; font-size: 13px;">
+			if job.QualificationsText != nil {
+				{ *job.QualificationsText }
+			}
+		</p>
+	}
+}
+
+templ StatusEditor(jobID int64, current db.ApplicationStatus) {
+	<p id="status-editor">
+		<strong>Application status:</strong>
+		<select
+			hx-post={ fmt.Sprintf("/jobs/%d/status", jobID) }
+			hx-target="#status-editor"
+			hx-swap="outerHTML"
+			name="status"
+		>
+			for _, s := range db.ValidApplicationStatuses {
+				if s == current {
+					<option value={ string(s) } selected>{ string(s) }</option>
+				} else {
+					<option value={ string(s) }>{ string(s) }</option>
+				}
+			}
+		</select>
+	</p>
+}

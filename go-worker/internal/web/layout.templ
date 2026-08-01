@@ -1,0 +1,33 @@
+package web
+
+templ Layout(title string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<title>{ title } - Roleping</title>
+			<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+			<style>
+				body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 0 auto; padding: 24px; }
+				table { width: 100%; border-collapse: collapse; font-size: 14px; }
+				th, td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+				nav { display: flex; gap: 12px; margin-bottom: 24px; }
+				nav a { text-decoration: none; padding: 6px 12px; border: 1px solid #d1d5db; border-radius: 4px; color: inherit; }
+				form label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; margin-bottom: 8px; }
+				.filters { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+				.match { color: #16a34a; }
+				.no-match { color: #6b7280; }
+				.pending { color: #9ca3af; }
+			</style>
+		</head>
+		<body>
+			<h1>Roleping</h1>
+			<nav>
+				<a href="/jobs">Jobs</a>
+				<a href="/companies">Companies</a>
+			</nav>
+			{ children... }
+		</body>
+	</html>
+}

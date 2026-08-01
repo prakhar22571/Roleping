@@ -1,0 +1,98 @@
+package web
+
+import (
+	"fmt"
+	"roleping-worker/internal/db"
+)
+
+templ CompaniesPage(companies []db.Company) {
+	@Layout("Companies") {
+		<button hx-post="/run-now" hx-target="#run-summary" hx-swap="innerHTML">Run check now</button>
+		<p id="run-summary"></p>
+
+		@CompaniesTable(companies)
+
+		<h3>Add a company</h3>
+		@CompanyForm()
+	}
+}
+
+templ CompaniesTable(companies []db.Company) {
+	<table id="companies-table">
+		<thead>
+			<tr>
+				<th>Name</th>
+				<th>Adapter</th>
+				<th>Portal URL</th>
+				<th>Active</th>
+				<th></th>
+			</tr>
+		</thead>
+		<tbody>
+			for _, c := range companies {
+				<tr>
+					<td>{ c.Name }</td>
+					<td>{ string(c.AdapterType) }</td>
+					<td>{ c.PortalURL }</td>
+					<td>
+						if c.IsActive {
+							yes
+						} else {
+							no
+						}
+					</td>
+					<td>
+						if c.IsActive {
+							<button
+								hx-post={ fmt.Sprintf("/companies/%d/deactivate", c.ID) }
+								hx-target="#companies-table"
+								hx-swap="outerHTML"
+							>
+								Deactivate
+							</button>
+						}
+					</td>
+				</tr>
+			}
+		</tbody>
+	</table>
+}
+
+templ CompanyForm() {
+	<form
+		hx-post="/companies"
+		hx-target="#companies-table"
+		hx-swap="outerHTML"
+		hx-on::after-request="if(event.detail.successful) this.reset()"
+	>
+		<label>
+			Name
+			<input type="text" name="name" required/>
+		</label>
+		<label>
+			Portal URL
+			<input type="text" name="portal_url" placeholder="https://..." required/>
+		</label>
+		<label>
+			Adapter type
+			<select name="adapter_type">
+				<option value="amazon">Amazon</option>
+				<option value="greenhouse" selected>Greenhouse</option>
+				<option value="lever">Lever</option>
+			</select>
+		</label>
+		<label>
+			Greenhouse board token (only used for Greenhouse)
+			<input type="text" name="board_token" placeholder="e.g. acme"/>
+		</label>
+		<label>
+			Lever company slug (only used for Lever)
+			<input type="text" name="lever_company" placeholder="e.g. acme"/>
+		</label>
+		<label>
+			Amazon results per page (only used for Amazon)
+			<input type="number" name="result_limit" min="1" max="100" value="20"/>
+		</label>
+		<button type="submit">Add company</button>
+	</form>
+}
