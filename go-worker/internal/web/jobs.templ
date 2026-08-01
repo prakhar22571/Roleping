@@ -5,8 +5,8 @@ import (
 	"roleping-worker/internal/db"
 )
 
-templ JobsPage(jobs []db.JobListRow, companies []db.Company) {
-	@Layout("Jobs") {
+templ JobsPage(jobs []db.JobListRow, companies []db.Company, userEmail string, isOwner bool) {
+	@Layout("Jobs", userEmail, isOwner) {
 		<form
 			class="filters"
 			hx-get="/jobs/table"
@@ -31,6 +31,10 @@ templ JobsPage(jobs []db.JobListRow, companies []db.Company) {
 			<label style="flex-direction: row; align-items: center; gap: 6px;">
 				<input type="checkbox" name="disagreement" value="true"/>
 				Model disagreement only
+			</label>
+			<label style="flex-direction: row; align-items: center; gap: 6px;">
+				<input type="checkbox" name="subscribed" value="true"/>
+				My subscriptions only
 			</label>
 			<input type="text" name="search" placeholder="Search title..."/>
 		</form>

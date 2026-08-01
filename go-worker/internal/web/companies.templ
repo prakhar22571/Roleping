@@ -5,8 +5,8 @@ import (
 	"roleping-worker/internal/db"
 )
 
-templ CompaniesPage(companies []db.Company) {
-	@Layout("Companies") {
+templ CompaniesPage(companies []db.CompanyWithSubscription, userEmail string, isOwner bool) {
+	@Layout("Companies", userEmail, isOwner) {
 		<button hx-post="/run-now" hx-target="#run-summary" hx-swap="innerHTML">Run check now</button>
 		<p id="run-summary"></p>
 
@@ -17,7 +17,7 @@ templ CompaniesPage(companies []db.Company) {
 	}
 }
 
-templ CompaniesTable(companies []db.Company) {
+templ CompaniesTable(companies []db.CompanyWithSubscription) {
 	<table id="companies-table">
 		<thead>
 			<tr>
@@ -25,6 +25,7 @@ templ CompaniesTable(companies []db.Company) {
 				<th>Adapter</th>
 				<th>Portal URL</th>
 				<th>Active</th>
+				<th>Alerts</th>
 				<th></th>
 			</tr>
 		</thead>
@@ -39,6 +40,25 @@ templ CompaniesTable(companies []db.Company) {
 							yes
 						} else {
 							no
+						}
+					</td>
+					<td>
+						if c.Subscribed {
+							<button
+								hx-post={ fmt.Sprintf("/companies/%d/unsubscribe", c.ID) }
+								hx-target="#companies-table"
+								hx-swap="outerHTML"
+							>
+								Unsubscribe
+							</button>
+						} else {
+							<button
+								hx-post={ fmt.Sprintf("/companies/%d/subscribe", c.ID) }
+								hx-target="#companies-table"
+								hx-swap="outerHTML"
+							>
+								Subscribe
+							</button>
 						}
 					</td>
 					<td>

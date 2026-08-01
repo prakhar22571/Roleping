@@ -2,6 +2,24 @@ package db
 
 import "roleping-worker/internal/adapters"
 
+type User struct {
+	ID        int64  `json:"id"`
+	Email     string `json:"email"`
+	CreatedAt string `json:"created_at"`
+	// SessionEpoch is bumped on password change to invalidate old cookies.
+	SessionEpoch int64 `json:"-"`
+	// Credentials are never serialized to JSON.
+	PasswordHash       string `json:"-"`
+	PasswordSalt       string `json:"-"`
+	PasswordIterations int    `json:"-"`
+}
+
+// HasPassword reports whether the user can log in. Users created by the
+// pipeline or by an owner before a password is assigned cannot.
+func (u User) HasPassword() bool {
+	return u.PasswordHash != "" && u.PasswordSalt != ""
+}
+
 type Company struct {
 	ID            int64                `json:"id"`
 	Name          string               `json:"name"`
@@ -43,15 +61,35 @@ type EmailStatus string
 const (
 	EmailSent   EmailStatus = "sent"
 	EmailFailed EmailStatus = "failed"
+	// EmailNone marks a dashboard-only notification: the subscriber is not
+	// the owner, so no email was attempted.
+	EmailNone EmailStatus = "none"
 )
 
 type Notification struct {
 	ID          int64       `json:"id"`
 	JobID       int64       `json:"job_id"`
+	UserID      int64       `json:"user_id"`
 	SentAt      string      `json:"sent_at"`
 	EmailStatus EmailStatus `json:"email_status"`
 	ResendID    *string     `json:"resend_id"`
 	ErrorDetail *string     `json:"error_detail"`
+}
+
+// NotificationRow is a notification joined with its job and company for
+// list views.
+type NotificationRow struct {
+	Notification
+	JobTitle    string `json:"job_title"`
+	CompanyName string `json:"company_name"`
+	ApplyURL    string `json:"apply_url"`
+}
+
+// CompanyWithSubscription is a company plus whether a given user is
+// subscribed to it.
+type CompanyWithSubscription struct {
+	Company
+	Subscribed bool `json:"subscribed"`
 }
 
 type ApplicationStatus string

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"roleping-worker/internal/auth"
 	"roleping-worker/internal/config"
 	"roleping-worker/internal/db"
 	"roleping-worker/internal/httprouter"
@@ -16,6 +17,12 @@ type jobDetailResponse struct {
 }
 
 func ListJobsHandler(w http.ResponseWriter, r *http.Request) {
+	ident, ok := auth.FromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	env, err := config.Load()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -35,6 +42,7 @@ func ListJobsHandler(w http.ResponseWriter, r *http.Request) {
 		filters.Status = &status
 	}
 	filters.DisagreementOnly = q.Get("disagreement") == "true"
+	filters.SubscribedOnly = q.Get("subscribed") == "true"
 	if limitStr := q.Get("limit"); limitStr != "" {
 		if limit, err := strconv.Atoi(limitStr); err == nil {
 			filters.Limit = limit
@@ -46,7 +54,7 @@ func ListJobsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	jobs, err := db.ListJobs(r.Context(), env.DB, filters)
+	jobs, err := db.ListJobs(r.Context(), env.DB, ident.UserID, filters)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -61,13 +69,19 @@ func GetJobDetailHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ident, ok := auth.FromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	env, err := config.Load()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	jobRow, err := db.GetJobListRow(r.Context(), env.DB, id)
+	jobRow, err := db.GetJobListRow(r.Context(), env.DB, id, ident.UserID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -82,7 +96,7 @@ func GetJobDetailHandler(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	notification, err := db.GetNotificationForJob(r.Context(), env.DB, id)
+	notification, err := db.GetNotificationForJob(r.Context(), env.DB, id, ident.UserID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

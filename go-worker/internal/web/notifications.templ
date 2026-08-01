@@ -1,0 +1,50 @@
+package web
+
+import (
+	"fmt"
+	"roleping-worker/internal/db"
+)
+
+templ NotificationsPage(notifications []db.NotificationRow, userEmail string, isOwner bool) {
+	@Layout("Notifications", userEmail, isOwner) {
+		<h2>Your notifications</h2>
+		if len(notifications) == 0 {
+			<p>No notifications yet. Subscribe to companies on the <a href="/companies">Companies</a> page to get alerted about matching jobs.</p>
+		} else {
+			<table id="notifications-table">
+				<thead>
+					<tr>
+						<th>Job</th>
+						<th>Company</th>
+						<th>When</th>
+						<th>Email</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, n := range notifications {
+						<tr>
+							<td><a href={ templ.URL(fmt.Sprintf("/jobs/%d", n.JobID)) }>{ n.JobTitle }</a></td>
+							<td>{ n.CompanyName }</td>
+							<td>{ n.SentAt }</td>
+							<td>
+								switch n.EmailStatus {
+									case db.EmailSent:
+										<span class="match">sent</span>
+									case db.EmailFailed:
+										<span class="no-match">
+											failed
+											if n.ErrorDetail != nil {
+												{ " — " + *n.ErrorDetail }
+											}
+										</span>
+									default:
+										<span class="pending">dashboard only</span>
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+	}
+}

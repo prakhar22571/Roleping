@@ -5,8 +5,8 @@ import (
 	"roleping-worker/internal/db"
 )
 
-templ JobDetailPage(job db.JobListRow, verdicts []db.LlmVerdict, notification *db.Notification) {
-	@Layout(job.Title) {
+templ JobDetailPage(job db.JobListRow, verdicts []db.LlmVerdict, notification *db.Notification, userEmail string, isOwner bool) {
+	@Layout(job.Title, userEmail, isOwner) {
 		<p><a href="/jobs">&larr; back to jobs</a></p>
 		<h2>{ job.Title }</h2>
 		<p><strong>Company:</strong> { job.CompanyName }</p>

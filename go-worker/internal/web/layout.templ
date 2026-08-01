@@ -1,6 +1,6 @@
 package web
 
-templ Layout(title string) {
+templ Layout(title string, userEmail string, isOwner bool) {
 	<!DOCTYPE html>
 	<html lang="en">
 		<head>
@@ -12,13 +12,17 @@ templ Layout(title string) {
 				body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 0 auto; padding: 24px; }
 				table { width: 100%; border-collapse: collapse; font-size: 14px; }
 				th, td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; text-align: left; }
-				nav { display: flex; gap: 12px; margin-bottom: 24px; }
+				nav { display: flex; gap: 12px; margin-bottom: 24px; align-items: center; }
 				nav a { text-decoration: none; padding: 6px 12px; border: 1px solid #d1d5db; border-radius: 4px; color: inherit; }
+				nav .user-email { margin-left: auto; font-size: 13px; color: #6b7280; }
 				form label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; margin-bottom: 8px; }
 				.filters { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
 				.match { color: #16a34a; }
 				.no-match { color: #6b7280; }
 				.pending { color: #9ca3af; }
+				.credential { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px; padding: 12px; margin-bottom: 16px; }
+				.credential code { display: block; font-size: 18px; letter-spacing: 1px; background: #fff; border: 1px solid #d1d5db; border-radius: 4px; padding: 8px; user-select: all; }
+				.error-box { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; padding: 12px; border-radius: 4px; margin-bottom: 16px; }
 			</style>
 		</head>
 		<body>
@@ -26,6 +30,12 @@ templ Layout(title string) {
 			<nav>
 				<a href="/jobs">Jobs</a>
 				<a href="/companies">Companies</a>
+				<a href="/notifications">Notifications</a>
+				if isOwner {
+					<a href="/users">Users</a>
+				}
+				<span class="user-email">{ userEmail }</span>
+				<a href="/account">Account</a>
 			</nav>
 			{ children... }
 		</body>

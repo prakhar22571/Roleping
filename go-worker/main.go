@@ -9,6 +9,7 @@ import (
 	"github.com/syumai/workers/cloudflare/cron"
 
 	"roleping-worker/internal/adapters"
+	"roleping-worker/internal/auth"
 	"roleping-worker/internal/config"
 	"roleping-worker/internal/jobs"
 	"roleping-worker/internal/router"
@@ -34,7 +35,7 @@ func runScheduledPipeline(ctx context.Context) error {
 }
 
 func main() {
-	handler := router.New()
+	handler := auth.Middleware(router.New())
 
 	workers.ServeNonBlock(handler)
 	cron.ScheduleTaskNonBlock(runScheduledPipeline)

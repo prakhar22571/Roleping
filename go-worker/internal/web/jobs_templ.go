@@ -13,7 +13,7 @@ import (
 	"roleping-worker/internal/db"
 )
 
-func JobsPage(jobs []db.JobListRow, companies []db.Company) templ.Component {
+func JobsPage(jobs []db.JobListRow, companies []db.Company, userEmail string, isOwner bool) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -82,7 +82,7 @@ func JobsPage(jobs []db.JobListRow, companies []db.Company) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</select> <select name=\"status\"><option value=\"\">All statuses</option> <option value=\"New\">New</option> <option value=\"Applied\">Applied</option> <option value=\"Interviewing\">Interviewing</option> <option value=\"Rejected\">Rejected</option> <option value=\"Offer\">Offer</option></select> <label style=\"flex-direction: row; align-items: center; gap: 6px;\"><input type=\"checkbox\" name=\"disagreement\" value=\"true\"> Model disagreement only</label> <input type=\"text\" name=\"search\" placeholder=\"Search title...\"></form>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</select> <select name=\"status\"><option value=\"\">All statuses</option> <option value=\"New\">New</option> <option value=\"Applied\">Applied</option> <option value=\"Interviewing\">Interviewing</option> <option value=\"Rejected\">Rejected</option> <option value=\"Offer\">Offer</option></select> <label style=\"flex-direction: row; align-items: center; gap: 6px;\"><input type=\"checkbox\" name=\"disagreement\" value=\"true\"> Model disagreement only</label> <label style=\"flex-direction: row; align-items: center; gap: 6px;\"><input type=\"checkbox\" name=\"subscribed\" value=\"true\"> My subscriptions only</label> <input type=\"text\" name=\"search\" placeholder=\"Search title...\"></form>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -92,7 +92,7 @@ func JobsPage(jobs []db.JobListRow, companies []db.Company) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = Layout("Jobs").Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = Layout("Jobs", userEmail, isOwner).Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -143,7 +143,7 @@ func JobsTable(jobs []db.JobListRow) templ.Component {
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(job.Title)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/jobs.templ`, Line: 58, Col: 75}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/jobs.templ`, Line: 62, Col: 75}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {
@@ -156,7 +156,7 @@ func JobsTable(jobs []db.JobListRow) templ.Component {
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(job.CompanyName)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/jobs.templ`, Line: 59, Col: 26}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/jobs.templ`, Line: 63, Col: 26}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
@@ -170,7 +170,7 @@ func JobsTable(jobs []db.JobListRow) templ.Component {
 				var templ_7745c5c3_Var9 string
 				templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(*job.PostedDate)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/jobs.templ`, Line: 62, Col: 24}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/jobs.templ`, Line: 66, Col: 24}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 				if templ_7745c5c3_Err != nil {
@@ -197,7 +197,7 @@ func JobsTable(jobs []db.JobListRow) templ.Component {
 						var templ_7745c5c3_Var10 string
 						templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(" / ")
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/jobs.templ`, Line: 73, Col: 16}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/jobs.templ`, Line: 77, Col: 16}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 						if templ_7745c5c3_Err != nil {
@@ -243,7 +243,7 @@ func JobsTable(jobs []db.JobListRow) templ.Component {
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(string(job.ApplicationStatus))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/jobs.templ`, Line: 90, Col: 40}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/jobs.templ`, Line: 94, Col: 40}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {

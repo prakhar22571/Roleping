@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/syumai/workers/cloudflare/fetch"
 
@@ -24,6 +25,14 @@ func RunPipeline(ctx context.Context, env *config.Env, registry *adapters.Regist
 	var summary PipelineSummary
 
 	modelA, modelB := env.ModelIDs()
+
+	// The cron may fire before the owner has ever logged in; make sure the
+	// owner's user row exists so their subscriptions can be recorded.
+	if env.OwnerEmail != "" {
+		if _, err := db.GetOrCreateUser(ctx, env.DB, env.OwnerEmail); err != nil {
+			return summary, err
+		}
+	}
 
 	companies, err := db.ListActiveCompanies(ctx, env.DB)
 	if err != nil {
@@ -66,6 +75,11 @@ func processCompany(
 		return err
 	}
 
+	subscribers, err := db.ListSubscribersForCompany(ctx, env.DB, company.ID)
+	if err != nil {
+		return err
+	}
+
 	for _, normalizedJob := range normalizedJobs {
 		jobRow, err := InsertIfNew(ctx, env.DB, company.ID, company.AdapterType, normalizedJob)
 		if err != nil {
@@ -86,23 +100,28 @@ func processCompany(
 		}
 
 		if verdictA.Match || verdictB.Match {
-			var companyRow db.Company = company
-			result := notify.SendJobAlertEmail(ctx, client, env.ResendAPIKey, env.AlertFromEmail, env.AlertToEmail, companyRow, normalizedJob, []classification.Verdict{verdictA, verdictB})
-
-			emailStatus := db.EmailFailed
-			if result.OK {
-				emailStatus = db.EmailSent
-			}
-			if err := db.RecordNotification(ctx, env.DB, db.NotificationInput{
-				JobID:       jobRow.ID,
-				EmailStatus: emailStatus,
-				ResendID:    result.ResendID,
-				ErrorDetail: result.ErrorDetail,
-			}); err != nil {
-				return err
-			}
-			if result.OK {
-				summary.NotificationsSent++
+			// Every subscriber gets a dashboard notification; only the
+			// owner gets an email (Resend's free sender can only deliver
+			// to the account owner's address).
+			for _, sub := range subscribers {
+				input := db.NotificationInput{
+					JobID:       jobRow.ID,
+					UserID:      sub.ID,
+					EmailStatus: db.EmailNone,
+				}
+				if strings.EqualFold(sub.Email, env.OwnerEmail) {
+					result := notify.SendJobAlertEmail(ctx, client, env.ResendAPIKey, env.AlertFromEmail, sub.Email, company, normalizedJob, []classification.Verdict{verdictA, verdictB})
+					input.EmailStatus = db.EmailFailed
+					if result.OK {
+						input.EmailStatus = db.EmailSent
+						summary.NotificationsSent++
+					}
+					input.ResendID = result.ResendID
+					input.ErrorDetail = result.ErrorDetail
+				}
+				if err := db.RecordNotification(ctx, env.DB, input); err != nil {
+					return err
+				}
 			}
 		}
 	}

@@ -8,7 +8,7 @@ package web
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-func Layout(title string) templ.Component {
+func Layout(title string, userEmail string, isOwner bool) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -42,7 +42,30 @@ func Layout(title string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " - Roleping</title><script src=\"https://unpkg.com/htmx.org@2.0.4\"></script><style>\n\t\t\t\tbody { font-family: system-ui, sans-serif; max-width: 1100px; margin: 0 auto; padding: 24px; }\n\t\t\t\ttable { width: 100%; border-collapse: collapse; font-size: 14px; }\n\t\t\t\tth, td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; text-align: left; }\n\t\t\t\tnav { display: flex; gap: 12px; margin-bottom: 24px; }\n\t\t\t\tnav a { text-decoration: none; padding: 6px 12px; border: 1px solid #d1d5db; border-radius: 4px; color: inherit; }\n\t\t\t\tform label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; margin-bottom: 8px; }\n\t\t\t\t.filters { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }\n\t\t\t\t.match { color: #16a34a; }\n\t\t\t\t.no-match { color: #6b7280; }\n\t\t\t\t.pending { color: #9ca3af; }\n\t\t\t</style></head><body><h1>Roleping</h1><nav><a href=\"/jobs\">Jobs</a> <a href=\"/companies\">Companies</a></nav>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " - Roleping</title><script src=\"https://unpkg.com/htmx.org@2.0.4\"></script><style>\n\t\t\t\tbody { font-family: system-ui, sans-serif; max-width: 1100px; margin: 0 auto; padding: 24px; }\n\t\t\t\ttable { width: 100%; border-collapse: collapse; font-size: 14px; }\n\t\t\t\tth, td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; text-align: left; }\n\t\t\t\tnav { display: flex; gap: 12px; margin-bottom: 24px; align-items: center; }\n\t\t\t\tnav a { text-decoration: none; padding: 6px 12px; border: 1px solid #d1d5db; border-radius: 4px; color: inherit; }\n\t\t\t\tnav .user-email { margin-left: auto; font-size: 13px; color: #6b7280; }\n\t\t\t\tform label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; margin-bottom: 8px; }\n\t\t\t\t.filters { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }\n\t\t\t\t.match { color: #16a34a; }\n\t\t\t\t.no-match { color: #6b7280; }\n\t\t\t\t.pending { color: #9ca3af; }\n\t\t\t\t.credential { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px; padding: 12px; margin-bottom: 16px; }\n\t\t\t\t.credential code { display: block; font-size: 18px; letter-spacing: 1px; background: #fff; border: 1px solid #d1d5db; border-radius: 4px; padding: 8px; user-select: all; }\n\t\t\t\t.error-box { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; padding: 12px; border-radius: 4px; margin-bottom: 16px; }\n\t\t\t</style></head><body><h1>Roleping</h1><nav><a href=\"/jobs\">Jobs</a> <a href=\"/companies\">Companies</a> <a href=\"/notifications\">Notifications</a> ")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if isOwner {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<a href=\"/users\">Users</a> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<span class=\"user-email\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var3 string
+		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(userEmail)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout.templ`, Line: 37, Col: 40}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</span> <a href=\"/account\">Account</a></nav>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -50,7 +73,7 @@ func Layout(title string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

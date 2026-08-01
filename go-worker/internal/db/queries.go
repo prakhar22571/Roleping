@@ -24,6 +24,182 @@ func scanNullString(ns sql.NullString) *string {
 	return &v
 }
 
+// GetOrCreateUser provisions a user row for an authenticated email on first
+// sight and returns it. Emails are stored lowercased so identity lookups are
+// case-insensitive.
+func GetOrCreateUser(ctx context.Context, conn *sql.DB, email string) (*User, error) {
+	normalized := strings.ToLower(strings.TrimSpace(email))
+	if normalized == "" {
+		return nil, fmt.Errorf("empty email")
+	}
+	if _, err := conn.ExecContext(ctx, "INSERT OR IGNORE INTO users (email) VALUES (?)", normalized); err != nil {
+		return nil, err
+	}
+	u, err := GetUserByEmail(ctx, conn, normalized)
+	if err != nil {
+		return nil, err
+	}
+	if u == nil {
+		return nil, fmt.Errorf("user %q vanished after insert", normalized)
+	}
+	return u, nil
+}
+
+const userColumns = "id, email, created_at, session_epoch, password_hash, password_salt, password_iterations"
+
+func scanUser(row interface{ Scan(...any) error }) (*User, error) {
+	var u User
+	var hash, salt sql.NullString
+	var iterations sql.NullInt64
+	err := row.Scan(&u.ID, &u.Email, &u.CreatedAt, &u.SessionEpoch, &hash, &salt, &iterations)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	u.PasswordHash = hash.String
+	u.PasswordSalt = salt.String
+	u.PasswordIterations = int(iterations.Int64)
+	return &u, nil
+}
+
+func GetUserByEmail(ctx context.Context, conn *sql.DB, email string) (*User, error) {
+	normalized := strings.ToLower(strings.TrimSpace(email))
+	return scanUser(conn.QueryRowContext(ctx, "SELECT "+userColumns+" FROM users WHERE email = ?", normalized))
+}
+
+func GetUserByID(ctx context.Context, conn *sql.DB, id int64) (*User, error) {
+	return scanUser(conn.QueryRowContext(ctx, "SELECT "+userColumns+" FROM users WHERE id = ?", id))
+}
+
+func ListUsers(ctx context.Context, conn *sql.DB) ([]User, error) {
+	rows, err := conn.QueryContext(ctx, "SELECT "+userColumns+" FROM users ORDER BY email")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []User
+	for rows.Next() {
+		var u User
+		var hash, salt sql.NullString
+		var iterations sql.NullInt64
+		if err := rows.Scan(&u.ID, &u.Email, &u.CreatedAt, &u.SessionEpoch, &hash, &salt, &iterations); err != nil {
+			return nil, err
+		}
+		u.PasswordHash = hash.String
+		u.PasswordSalt = salt.String
+		u.PasswordIterations = int(iterations.Int64)
+		users = append(users, u)
+	}
+	return users, rows.Err()
+}
+
+// SetUserPassword stores new credentials and bumps session_epoch, which
+// invalidates every session cookie previously issued to this user.
+func SetUserPassword(ctx context.Context, conn *sql.DB, userID int64, hash, salt string, iterations int) error {
+	_, err := conn.ExecContext(ctx,
+		`UPDATE users
+		 SET password_hash = ?, password_salt = ?, password_iterations = ?, session_epoch = session_epoch + 1
+		 WHERE id = ?`,
+		hash, salt, iterations, userID,
+	)
+	return err
+}
+
+// DeleteUser removes a user and everything scoped to them. The child rows
+// are deleted explicitly rather than relying on ON DELETE CASCADE, since
+// SQLite only enforces foreign keys when the connection opts in and D1's
+// behaviour here isn't something to bet a stale-row bug on.
+func DeleteUser(ctx context.Context, conn *sql.DB, userID int64) error {
+	for _, stmt := range []string{
+		"DELETE FROM company_subscriptions WHERE user_id = ?",
+		"DELETE FROM application_status WHERE user_id = ?",
+		"DELETE FROM notifications WHERE user_id = ?",
+		"DELETE FROM users WHERE id = ?",
+	} {
+		if _, err := conn.ExecContext(ctx, stmt, userID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func SubscribeCompany(ctx context.Context, conn *sql.DB, userID, companyID int64) error {
+	_, err := conn.ExecContext(ctx,
+		"INSERT OR IGNORE INTO company_subscriptions (user_id, company_id) VALUES (?, ?)",
+		userID, companyID,
+	)
+	return err
+}
+
+func UnsubscribeCompany(ctx context.Context, conn *sql.DB, userID, companyID int64) error {
+	_, err := conn.ExecContext(ctx,
+		"DELETE FROM company_subscriptions WHERE user_id = ? AND company_id = ?",
+		userID, companyID,
+	)
+	return err
+}
+
+func ListSubscribersForCompany(ctx context.Context, conn *sql.DB, companyID int64) ([]User, error) {
+	rows, err := conn.QueryContext(ctx,
+		`SELECT users.id, users.email, users.created_at
+		 FROM users
+		 JOIN company_subscriptions ON company_subscriptions.user_id = users.id
+		 WHERE company_subscriptions.company_id = ?
+		 ORDER BY users.id`,
+		companyID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []User
+	for rows.Next() {
+		var u User
+		if err := rows.Scan(&u.ID, &u.Email, &u.CreatedAt); err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, rows.Err()
+}
+
+func ListCompaniesWithSubscription(ctx context.Context, conn *sql.DB, userID int64) ([]CompanyWithSubscription, error) {
+	rows, err := conn.QueryContext(ctx,
+		`SELECT companies.id, companies.name, companies.portal_url, companies.adapter_type, companies.adapter_config,
+		        companies.is_active, companies.created_at, companies.updated_at,
+		        CASE WHEN company_subscriptions.user_id IS NOT NULL THEN 1 ELSE 0 END AS subscribed
+		 FROM companies
+		 LEFT JOIN company_subscriptions ON company_subscriptions.company_id = companies.id AND company_subscriptions.user_id = ?
+		 ORDER BY companies.name`,
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var companies []CompanyWithSubscription
+	for rows.Next() {
+		var c CompanyWithSubscription
+		var adapterType string
+		var adapterConfig sql.NullString
+		var isActive, subscribed int
+		if err := rows.Scan(&c.ID, &c.Name, &c.PortalURL, &adapterType, &adapterConfig, &isActive, &c.CreatedAt, &c.UpdatedAt, &subscribed); err != nil {
+			return nil, err
+		}
+		c.AdapterType = adapters.AdapterType(adapterType)
+		c.AdapterConfig = scanNullString(adapterConfig)
+		c.IsActive = isActive != 0
+		c.Subscribed = subscribed != 0
+		companies = append(companies, c)
+	}
+	return companies, rows.Err()
+}
+
 func ListCompanies(ctx context.Context, conn *sql.DB) ([]Company, error) {
 	rows, err := conn.QueryContext(ctx, "SELECT id, name, portal_url, adapter_type, adapter_config, is_active, created_at, updated_at FROM companies ORDER BY name")
 	if err != nil {
@@ -215,10 +391,6 @@ func InsertJob(ctx context.Context, conn *sql.DB, companyID int64, source adapte
 		return nil, err
 	}
 
-	if _, err := conn.ExecContext(ctx, "INSERT OR IGNORE INTO application_status (job_id, status) VALUES (?, 'New')", id); err != nil {
-		return nil, err
-	}
-
 	return GetJob(ctx, conn, id)
 }
 
@@ -287,6 +459,7 @@ func ListVerdictsForJob(ctx context.Context, conn *sql.DB, jobID int64) ([]LlmVe
 
 type NotificationInput struct {
 	JobID       int64
+	UserID      int64
 	EmailStatus EmailStatus
 	ResendID    *string
 	ErrorDetail *string
@@ -294,25 +467,25 @@ type NotificationInput struct {
 
 func RecordNotification(ctx context.Context, conn *sql.DB, input NotificationInput) error {
 	_, err := conn.ExecContext(ctx,
-		`INSERT INTO notifications (job_id, email_status, resend_id, error_detail)
-		 VALUES (?, ?, ?, ?)
-		 ON CONFLICT (job_id) DO UPDATE SET
+		`INSERT INTO notifications (job_id, user_id, email_status, resend_id, error_detail)
+		 VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT (job_id, user_id) DO UPDATE SET
 		   email_status = excluded.email_status,
 		   resend_id = excluded.resend_id,
 		   error_detail = excluded.error_detail,
 		   sent_at = datetime('now')`,
-		input.JobID, string(input.EmailStatus), nullableString(input.ResendID), nullableString(input.ErrorDetail),
+		input.JobID, input.UserID, string(input.EmailStatus), nullableString(input.ResendID), nullableString(input.ErrorDetail),
 	)
 	return err
 }
 
-func GetNotificationForJob(ctx context.Context, conn *sql.DB, jobID int64) (*Notification, error) {
+func GetNotificationForJob(ctx context.Context, conn *sql.DB, jobID, userID int64) (*Notification, error) {
 	var n Notification
 	var emailStatus string
 	var resendID, errorDetail sql.NullString
 	err := conn.QueryRowContext(ctx,
-		"SELECT id, job_id, sent_at, email_status, resend_id, error_detail FROM notifications WHERE job_id = ?", jobID,
-	).Scan(&n.ID, &n.JobID, &n.SentAt, &emailStatus, &resendID, &errorDetail)
+		"SELECT id, job_id, user_id, sent_at, email_status, resend_id, error_detail FROM notifications WHERE job_id = ? AND user_id = ?", jobID, userID,
+	).Scan(&n.ID, &n.JobID, &n.UserID, &n.SentAt, &emailStatus, &resendID, &errorDetail)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -325,19 +498,29 @@ func GetNotificationForJob(ctx context.Context, conn *sql.DB, jobID int64) (*Not
 	return &n, nil
 }
 
-func ListNotifications(ctx context.Context, conn *sql.DB) ([]Notification, error) {
-	rows, err := conn.QueryContext(ctx, "SELECT id, job_id, sent_at, email_status, resend_id, error_detail FROM notifications ORDER BY sent_at DESC")
+func ListNotificationsForUser(ctx context.Context, conn *sql.DB, userID int64) ([]NotificationRow, error) {
+	rows, err := conn.QueryContext(ctx,
+		`SELECT notifications.id, notifications.job_id, notifications.user_id, notifications.sent_at,
+		        notifications.email_status, notifications.resend_id, notifications.error_detail,
+		        jobs.title, companies.name, jobs.apply_url
+		 FROM notifications
+		 JOIN jobs ON jobs.id = notifications.job_id
+		 JOIN companies ON companies.id = jobs.company_id
+		 WHERE notifications.user_id = ?
+		 ORDER BY notifications.sent_at DESC`,
+		userID,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var notifications []Notification
+	var notifications []NotificationRow
 	for rows.Next() {
-		var n Notification
+		var n NotificationRow
 		var emailStatus string
 		var resendID, errorDetail sql.NullString
-		if err := rows.Scan(&n.ID, &n.JobID, &n.SentAt, &emailStatus, &resendID, &errorDetail); err != nil {
+		if err := rows.Scan(&n.ID, &n.JobID, &n.UserID, &n.SentAt, &emailStatus, &resendID, &errorDetail, &n.JobTitle, &n.CompanyName, &n.ApplyURL); err != nil {
 			return nil, err
 		}
 		n.EmailStatus = EmailStatus(emailStatus)
@@ -348,11 +531,11 @@ func ListNotifications(ctx context.Context, conn *sql.DB) ([]Notification, error
 	return notifications, rows.Err()
 }
 
-func UpdateApplicationStatus(ctx context.Context, conn *sql.DB, jobID int64, status ApplicationStatus) error {
+func UpdateApplicationStatus(ctx context.Context, conn *sql.DB, jobID, userID int64, status ApplicationStatus) error {
 	_, err := conn.ExecContext(ctx,
-		`INSERT INTO application_status (job_id, status) VALUES (?, ?)
-		 ON CONFLICT (job_id) DO UPDATE SET status = excluded.status, updated_at = datetime('now')`,
-		jobID, string(status),
+		`INSERT INTO application_status (job_id, user_id, status) VALUES (?, ?, ?)
+		 ON CONFLICT (job_id, user_id) DO UPDATE SET status = excluded.status, updated_at = datetime('now')`,
+		jobID, userID, string(status),
 	)
 	return err
 }
@@ -361,6 +544,7 @@ type JobListFilters struct {
 	CompanyID        *int64
 	Status           *ApplicationStatus
 	DisagreementOnly bool
+	SubscribedOnly   bool
 	TitleContains    *string
 	Limit            int
 	Offset           int
@@ -374,24 +558,33 @@ type JobListRow struct {
 	VerdictsJSON      *string           `json:"verdicts_json"`
 }
 
-func ListJobs(ctx context.Context, conn *sql.DB, filters JobListFilters) ([]JobListRow, error) {
+func ListJobs(ctx context.Context, conn *sql.DB, userID int64, filters JobListFilters) ([]JobListRow, error) {
 	var conditions []string
-	var args []any
+	var condArgs []any
 
 	if filters.CompanyID != nil {
 		conditions = append(conditions, "jobs.company_id = ?")
-		args = append(args, *filters.CompanyID)
+		condArgs = append(condArgs, *filters.CompanyID)
 	}
 	if filters.Status != nil {
-		conditions = append(conditions, "application_status.status = ?")
-		args = append(args, string(*filters.Status))
+		if *filters.Status == StatusNew {
+			// "New" is the implicit default: no row, or an explicit New row.
+			conditions = append(conditions, "(application_status.status IS NULL OR application_status.status = 'New')")
+		} else {
+			conditions = append(conditions, "application_status.status = ?")
+			condArgs = append(condArgs, string(*filters.Status))
+		}
 	}
 	if filters.DisagreementOnly {
 		conditions = append(conditions, "(SELECT COUNT(DISTINCT match) FROM llm_verdicts WHERE llm_verdicts.job_id = jobs.id) > 1")
 	}
+	if filters.SubscribedOnly {
+		conditions = append(conditions, "EXISTS (SELECT 1 FROM company_subscriptions cs WHERE cs.company_id = jobs.company_id AND cs.user_id = ?)")
+		condArgs = append(condArgs, userID)
+	}
 	if filters.TitleContains != nil && *filters.TitleContains != "" {
 		conditions = append(conditions, "jobs.title LIKE ?")
-		args = append(args, "%"+*filters.TitleContains+"%")
+		condArgs = append(condArgs, "%"+*filters.TitleContains+"%")
 	}
 
 	whereClause := ""
@@ -403,6 +596,10 @@ func ListJobs(ctx context.Context, conn *sql.DB, filters JobListFilters) ([]JobL
 	if limit <= 0 {
 		limit = 100
 	}
+	// Placeholder order must mirror the SQL: the two per-user JOIN
+	// conditions come before the WHERE filters.
+	args := []any{userID, userID}
+	args = append(args, condArgs...)
 	args = append(args, limit, filters.Offset)
 
 	query := fmt.Sprintf(`
@@ -410,13 +607,13 @@ func ListJobs(ctx context.Context, conn *sql.DB, filters JobListFilters) ([]JobL
 		       jobs.posted_date, jobs.qualifications_text, jobs.apply_url, jobs.raw_json, jobs.first_seen_at,
 		       companies.name AS company_name,
 		       application_status.status AS application_status,
-		       CASE WHEN notifications.email_status = 'sent' THEN 1 ELSE 0 END AS notified,
+		       CASE WHEN notifications.id IS NOT NULL THEN 1 ELSE 0 END AS notified,
 		       (SELECT json_group_array(json_object('model_id', model_id, 'match', match, 'reasoning', reasoning))
 		        FROM llm_verdicts WHERE llm_verdicts.job_id = jobs.id) AS verdicts_json
 		FROM jobs
 		JOIN companies ON companies.id = jobs.company_id
-		LEFT JOIN application_status ON application_status.job_id = jobs.id
-		LEFT JOIN notifications ON notifications.job_id = jobs.id
+		LEFT JOIN application_status ON application_status.job_id = jobs.id AND application_status.user_id = ?
+		LEFT JOIN notifications ON notifications.job_id = jobs.id AND notifications.user_id = ?
 		%s
 		ORDER BY jobs.first_seen_at DESC
 		LIMIT ? OFFSET ?`, whereClause)
@@ -460,20 +657,20 @@ func ListJobs(ctx context.Context, conn *sql.DB, filters JobListFilters) ([]JobL
 
 // GetJobListRow fetches a single job with its company name, application
 // status, notification status, and verdict summary joined in, for detail views.
-func GetJobListRow(ctx context.Context, conn *sql.DB, id int64) (*JobListRow, error) {
+func GetJobListRow(ctx context.Context, conn *sql.DB, id, userID int64) (*JobListRow, error) {
 	row := conn.QueryRowContext(ctx, `
 		SELECT jobs.id, jobs.external_id, jobs.source, jobs.company_id, jobs.title, jobs.location,
 		       jobs.posted_date, jobs.qualifications_text, jobs.apply_url, jobs.raw_json, jobs.first_seen_at,
 		       companies.name AS company_name,
 		       application_status.status AS application_status,
-		       CASE WHEN notifications.email_status = 'sent' THEN 1 ELSE 0 END AS notified,
+		       CASE WHEN notifications.id IS NOT NULL THEN 1 ELSE 0 END AS notified,
 		       (SELECT json_group_array(json_object('model_id', model_id, 'match', match, 'reasoning', reasoning))
 		        FROM llm_verdicts WHERE llm_verdicts.job_id = jobs.id) AS verdicts_json
 		FROM jobs
 		JOIN companies ON companies.id = jobs.company_id
-		LEFT JOIN application_status ON application_status.job_id = jobs.id
-		LEFT JOIN notifications ON notifications.job_id = jobs.id
-		WHERE jobs.id = ?`, id)
+		LEFT JOIN application_status ON application_status.job_id = jobs.id AND application_status.user_id = ?
+		LEFT JOIN notifications ON notifications.job_id = jobs.id AND notifications.user_id = ?
+		WHERE jobs.id = ?`, userID, userID, id)
 
 	var r JobListRow
 	var source string

@@ -21,7 +21,7 @@ type Env struct {
 	ConfigKV         *kv.Namespace
 	OpenRouterAPIKey string
 	ResendAPIKey     string
-	AlertToEmail     string
+	OwnerEmail       string
 	AlertFromEmail   string
 }
 
@@ -41,7 +41,7 @@ func Load() (*Env, error) {
 		ConfigKV:         configKV,
 		OpenRouterAPIKey: cloudflare.Getenv("OPENROUTER_API_KEY"),
 		ResendAPIKey:     cloudflare.Getenv("RESEND_API_KEY"),
-		AlertToEmail:     cloudflare.Getenv("ALERT_TO_EMAIL"),
+		OwnerEmail:       cloudflare.Getenv("OWNER_EMAIL"),
 		AlertFromEmail:   cloudflare.Getenv("ALERT_FROM_EMAIL"),
 	}, nil
 }

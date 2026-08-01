@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"roleping-worker/internal/auth"
 	"roleping-worker/internal/config"
 	"roleping-worker/internal/db"
 	"roleping-worker/internal/httprouter"
@@ -43,7 +44,13 @@ func UpdateApplicationStatusHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := db.UpdateApplicationStatus(r.Context(), env.DB, id, db.ApplicationStatus(body.Status)); err != nil {
+	ident, ok := auth.FromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	if err := db.UpdateApplicationStatus(r.Context(), env.DB, id, ident.UserID, db.ApplicationStatus(body.Status)); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

@@ -1,6 +1,8 @@
 package web
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,11 +11,22 @@ import (
 	"github.com/a-h/templ"
 
 	"roleping-worker/internal/adapters"
+	"roleping-worker/internal/auth"
 	"roleping-worker/internal/config"
 	"roleping-worker/internal/db"
 	"roleping-worker/internal/httprouter"
 	"roleping-worker/internal/jobs"
 )
+
+// identity fetches the authenticated identity set by auth.Middleware,
+// writing a 401 if it is somehow missing.
+func identity(w http.ResponseWriter, r *http.Request) (auth.Identity, bool) {
+	ident, ok := auth.FromContext(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	}
+	return ident, ok
+}
 
 func RegisterRoutes(mux *httprouter.Router) {
 	mux.Handle("GET /", func(w http.ResponseWriter, r *http.Request) {
@@ -28,6 +41,10 @@ func RegisterRoutes(mux *httprouter.Router) {
 	mux.Handle("GET /companies", companiesPageHandler)
 	mux.Handle("POST /companies", createCompanyHandler)
 	mux.Handle("POST /companies/{id}/deactivate", deactivateCompanyHandler)
+	mux.Handle("POST /companies/{id}/subscribe", subscribeCompanyHandler)
+	mux.Handle("POST /companies/{id}/unsubscribe", unsubscribeCompanyHandler)
+
+	mux.Handle("GET /notifications", notificationsPageHandler)
 
 	mux.Handle("POST /run-now", runNowHandler)
 }
@@ -45,6 +62,7 @@ func jobFiltersFromQuery(r *http.Request) db.JobListFilters {
 		filters.Status = &status
 	}
 	filters.DisagreementOnly = q.Get("disagreement") == "true"
+	filters.SubscribedOnly = q.Get("subscribed") == "true"
 	if search := q.Get("search"); search != "" {
 		filters.TitleContains = &search
 	}
@@ -52,13 +70,18 @@ func jobFiltersFromQuery(r *http.Request) db.JobListFilters {
 }
 
 func jobsPageHandler(w http.ResponseWriter, r *http.Request) {
+	ident, ok := identity(w, r)
+	if !ok {
+		return
+	}
+
 	env, err := config.Load()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	jobRows, err := db.ListJobs(r.Context(), env.DB, db.JobListFilters{})
+	jobRows, err := db.ListJobs(r.Context(), env.DB, ident.UserID, db.JobListFilters{})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -69,17 +92,22 @@ func jobsPageHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	templ.Handler(JobsPage(jobRows, companies)).ServeHTTP(w, r)
+	templ.Handler(JobsPage(jobRows, companies, ident.Email, ident.IsOwner)).ServeHTTP(w, r)
 }
 
 func jobsTableHandler(w http.ResponseWriter, r *http.Request) {
+	ident, ok := identity(w, r)
+	if !ok {
+		return
+	}
+
 	env, err := config.Load()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	jobRows, err := db.ListJobs(r.Context(), env.DB, jobFiltersFromQuery(r))
+	jobRows, err := db.ListJobs(r.Context(), env.DB, ident.UserID, jobFiltersFromQuery(r))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -95,13 +123,18 @@ func jobDetailPageHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ident, ok := identity(w, r)
+	if !ok {
+		return
+	}
+
 	env, err := config.Load()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	jobRow, err := db.GetJobListRow(r.Context(), env.DB, id)
+	jobRow, err := db.GetJobListRow(r.Context(), env.DB, id, ident.UserID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -116,13 +149,13 @@ func jobDetailPageHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	notification, err := db.GetNotificationForJob(r.Context(), env.DB, id)
+	notification, err := db.GetNotificationForJob(r.Context(), env.DB, id, ident.UserID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	templ.Handler(JobDetailPage(*jobRow, verdicts, notification)).ServeHTTP(w, r)
+	templ.Handler(JobDetailPage(*jobRow, verdicts, notification, ident.Email, ident.IsOwner)).ServeHTTP(w, r)
 }
 
 func updateStatusHandler(w http.ResponseWriter, r *http.Request) {
@@ -141,13 +174,18 @@ func updateStatusHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ident, ok := identity(w, r)
+	if !ok {
+		return
+	}
+
 	env, err := config.Load()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	if err := db.UpdateApplicationStatus(r.Context(), env.DB, id, db.ApplicationStatus(status)); err != nil {
+	if err := db.UpdateApplicationStatus(r.Context(), env.DB, id, ident.UserID, db.ApplicationStatus(status)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -156,19 +194,90 @@ func updateStatusHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func companiesPageHandler(w http.ResponseWriter, r *http.Request) {
+	ident, ok := identity(w, r)
+	if !ok {
+		return
+	}
+
 	env, err := config.Load()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	companies, err := db.ListCompanies(r.Context(), env.DB)
+	companies, err := db.ListCompaniesWithSubscription(r.Context(), env.DB, ident.UserID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	templ.Handler(CompaniesPage(companies)).ServeHTTP(w, r)
+	templ.Handler(CompaniesPage(companies, ident.Email, ident.IsOwner)).ServeHTTP(w, r)
+}
+
+// renderCompaniesTable re-renders the htmx companies table fragment for the
+// current user.
+func renderCompaniesTable(w http.ResponseWriter, r *http.Request, env *config.Env, userID int64) {
+	companies, err := db.ListCompaniesWithSubscription(r.Context(), env.DB, userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	templ.Handler(CompaniesTable(companies)).ServeHTTP(w, r)
+}
+
+func subscribeCompanyHandler(w http.ResponseWriter, r *http.Request) {
+	toggleSubscriptionHandler(w, r, db.SubscribeCompany)
+}
+
+func unsubscribeCompanyHandler(w http.ResponseWriter, r *http.Request) {
+	toggleSubscriptionHandler(w, r, db.UnsubscribeCompany)
+}
+
+func toggleSubscriptionHandler(w http.ResponseWriter, r *http.Request, apply func(ctx context.Context, conn *sql.DB, userID, companyID int64) error) {
+	id, err := strconv.ParseInt(httprouter.PathValue(r, "id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid company id", http.StatusBadRequest)
+		return
+	}
+
+	ident, ok := identity(w, r)
+	if !ok {
+		return
+	}
+
+	env, err := config.Load()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := apply(r.Context(), env.DB, ident.UserID, id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	renderCompaniesTable(w, r, env, ident.UserID)
+}
+
+func notificationsPageHandler(w http.ResponseWriter, r *http.Request) {
+	ident, ok := identity(w, r)
+	if !ok {
+		return
+	}
+
+	env, err := config.Load()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	notifications, err := db.ListNotificationsForUser(r.Context(), env.DB, ident.UserID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	templ.Handler(NotificationsPage(notifications, ident.Email, ident.IsOwner)).ServeHTTP(w, r)
 }
 
 func buildAdapterConfig(adapterType, boardToken, leverCompany, resultLimitStr string) *string {
@@ -209,6 +318,11 @@ func createCompanyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ident, ok := identity(w, r)
+	if !ok {
+		return
+	}
+
 	env, err := config.Load()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -217,28 +331,35 @@ func createCompanyHandler(w http.ResponseWriter, r *http.Request) {
 
 	adapterConfig := buildAdapterConfig(adapterType, r.FormValue("board_token"), r.FormValue("lever_company"), r.FormValue("result_limit"))
 
-	if _, err := db.CreateCompany(r.Context(), env.DB, db.CreateCompanyInput{
+	company, err := db.CreateCompany(r.Context(), env.DB, db.CreateCompanyInput{
 		Name:          name,
 		PortalURL:     portalURL,
 		AdapterType:   adapters.AdapterType(adapterType),
 		AdapterConfig: adapterConfig,
-	}); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	companies, err := db.ListCompanies(r.Context(), env.DB)
+	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	templ.Handler(CompaniesTable(companies)).ServeHTTP(w, r)
+
+	// Whoever adds a company almost certainly wants alerts for it.
+	if err := db.SubscribeCompany(r.Context(), env.DB, ident.UserID, company.ID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	renderCompaniesTable(w, r, env, ident.UserID)
 }
 
 func deactivateCompanyHandler(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(httprouter.PathValue(r, "id"), 10, 64)
 	if err != nil {
 		http.Error(w, "invalid company id", http.StatusBadRequest)
+		return
+	}
+
+	ident, ok := identity(w, r)
+	if !ok {
 		return
 	}
 
@@ -254,12 +375,7 @@ func deactivateCompanyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	companies, err := db.ListCompanies(r.Context(), env.DB)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	templ.Handler(CompaniesTable(companies)).ServeHTTP(w, r)
+	renderCompaniesTable(w, r, env, ident.UserID)
 }
 
 func runNowHandler(w http.ResponseWriter, r *http.Request) {
