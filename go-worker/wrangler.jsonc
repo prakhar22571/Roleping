@@ -6,23 +6,24 @@
     {
       "binding": "DB",
       "database_name": "roleping-db",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_id": "183dbc14-f775-47a4-8637-3cf85357a283",
       "migrations_dir": "../migrations"
     }
   ],
   "kv_namespaces": [
     {
       "binding": "CONFIG_KV",
-      "id": "REPLACE_WITH_KV_NAMESPACE_ID"
+      "id": "4350ba75f5fb4aa88711a3eaa961d4a0"
     }
   ],
   "triggers": {
     "crons": ["*/15 * * * *"]
   },
   "vars": {
-    "ALERT_TO_EMAIL": "prakhar.tools@gmail.com",
+    "OWNER_EMAIL": "prakhar.tools@gmail.com",
     "ALERT_FROM_EMAIL": "onboarding@resend.dev"
   },
+  "preview_urls": false,
   "build": {
     "command": "npm run build",
     "watch_dir": ["main.go", "go.mod", "internal"]
